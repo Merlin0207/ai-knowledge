@@ -1,0 +1,23 @@
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+*.log
+~$*
+
+# 环境与密钥（严禁提交）
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# 依赖
+node_modules/
+__pycache__/
+.venv/
