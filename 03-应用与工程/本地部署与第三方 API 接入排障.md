@@ -1,7 +1,7 @@
 > 主题：本地部署、第三方 API 接入与第三方能力包验收的排障记录
 > 来源：与 WorkBuddy 的对话整理
-> 整理日期：2026-11-02（初版 2026-11-01；本次新增第七节）
-> 适用版本：Windows 11 + Node.js 环境；ziwei-doushu（Next.js 16.3.8）+ DeepSeek API；百度网盘连接器；三款第三方足球预测 Skill
+> 整理日期：2026-11-03（初版 2026-11-01；11-02 新增第七节；11-03 新增第八至十一节：DeepSeek Harness 接入、key 安全传递、通道故障甄别、无头截图 DPI 陷阱）\
+> 适用版本：Windows 11 + Node.js 环境；ziwei-doushu（Next.js 16.3.8）+ DeepSeek API；DeepSeek Harness v0.2.1-rc.5；Codex CLI；百度网盘连接器；三款第三方足球预测 Skill
 
 # 本地部署与第三方 API 接入排障
 
@@ -168,3 +168,70 @@ npm run dev
 - **卸载（uninstall）**：文件删除，但依赖它的本地脚本会一起失效。
 
 若本地已有代码引用了该组件，卸载前先把需要的逻辑 fork 出来。本次就是先写完自包含版本、再确认卸载。
+
+## 八、DeepSeek Harness 桌面客户端接入官方 CLI（2026-11-03 新增）
+
+### 探测路径（通用排查顺序，适用于任意 Electron AI 客户端）
+
+1. **确认安装形态**：`D:\DEEPSEEK` 为纯 Electron 客户端（DeepSeek Harness v0.2.1-rc.5）——**桌面版不带 CLI，这一点与 Codex 桌面版不同**，不能想当然。
+2. **查配置目录**：`C:\Users\16974\.dsh` 存在（与 `~/.codex` 同级），内有 `.credentials.yaml`（grant 记录指向 platform.deepseek.com，但**不能当作 API key 复用**）。
+3. **查运行时暴露面**：进程监听 `127.0.0.1:56984` 本地 API，但需鉴权（401）；Electron 的 localStorage 无明文凭据（安全存储已加密），**不要浪费时间挖本地登录态**。
+4. **找内嵌 CLI**：客户端包内 `app.asar.unpacked/dsh` 有 `dsh.cmd` 启动器——官方 CLI 就嵌在安装包里，npm 包名 `@deepseek-ai/dsh`。
+5. **验证 headless 模式**：`dsh headless "任务"` = codex exec 的等价物（回答一个任务、打印结果、退出）。实跑确认 CLI 可启动、可退出。
+
+### 关键差异：额度来源
+
+| | Codex CLI | DeepSeek (dsh) |
+| --- | --- | --- |
+| 额度 | ChatGPT 订阅额度，不额外付费 | 软件免费（MIT），**token 自付** |
+| 报错形态 | 通道故障（见第十节） | `MISSING_CREDENTIAL`：缺 `DEEPSEEK_API_KEY` |
+
+### 模型名不要猜，要探测
+
+调用器脚本里凭印象写的模型名是错的。`--check` 探测后**实际可用模型只有 `deepseek-flash` 和 `deepseek-v4-pro` 两个**。已把探测逻辑改为对照实际模型清单，不再硬编码旧名。**规则：接任何新 API，第一步先 list models，不要先写死模型名。**
+
+### 首测成本对比（同一类任务：单场赛事独立建模）
+
+| | deepseek-v4-pro | codex（CLI 走订阅） |
+| --- | --- | --- |
+| 耗时 | 25.8 秒 | 103 秒 |
+| tokens | 3.4k | 53.7k |
+| 现金成本 | 约 $0.002 | 0（占订阅额度） |
+
+Codex 走 Responses API 的另一条路（与 CLI 不同计费）：gpt-5.3-codex 约 $1.75/$14 每百万 tokens（输入/输出），codex-mini $1.50/$6；粗算高频自动化场景约 ¥2/场、月 ¥250。**低频场景 CLI 免费够用，不迁移**。
+
+## 九、API key 的安全传递：剪贴板通道
+
+- **key 贴进聊天 = 留档**：会进入对话记录与云端存档，应视为已泄露，作废重开。
+- **固化流程**：用户复制 key → agent 读剪贴板落盘（`deepseek.key`）→ 日志只显示脱敏特征（长度 + 前后各几位，如 `sk-615…5200`）→ 连通性自检。
+- 落盘文件不进 Git（.gitignore 覆盖）。换 key 重复同一流程，余额跟账号走，不丢钱。
+
+## 十、通道故障甄别：先探针，再排查脚本
+
+Codex MCP 通道整体报错（传输中断）时，先用一个**最简单的联网探针任务**测试通道（如让它抓一个已知 URL），探针也超时 → 是 chatgpt.com 服务端故障，不是本地脚本问题。
+
+**规则**：服务端整体故障时记录在案、等恢复后补跑，**不要反复重试本地脚本**——重试只能证明通道不通，不能修复它。恢复后先补跑被中断的任务（本次补上了马竞场的 codex 事实核验），再继续新任务。
+
+## 十一、无头浏览器截图的 DPI 换算陷阱
+
+### 现象
+
+Edge（系统 125% DPI 缩放）+ headless Chrome 截图：页面右侧被稳定裁切，反复改 CSS 无效——**页面本身没有问题**。
+
+### 根因（三个宽度互不相等）
+
+- `--window-size=380` 在 125% DPI 下实际渲染 CSS 视口约 492（系数 k≈1.295）；
+- PNG 宽 = window-size × force（`--force-device-scale-factor`）；
+- 渲染内容宽 = innerW × force，而 innerW = window-size × k。
+
+`--force-device-scale-factor=1` **不能**消除 window-size 与 CSS 视口之间的换算差，只影响输出像素密度。
+
+### 解法（按优先级）
+
+1. **别纠结 innerW，让内容左对齐占满 window**：内容居中时，视口比 window 宽 23%，右侧内容必然落在 PNG 之外。截图场景去掉居中样式即可，响应式布局交给 CSS。
+2. **自动校准截图脚本**：先注入 JS 测 `innerWidth` 算出换算系数，再按系数反推 `--window-size`，一劳永逸。
+3. **高清输出用大 force**：`force=3` 时 PNG 宽 = window × 3（如 400 → 1200px），文字锐利。
+
+### 元教训
+
+截图异常先区分「页面真溢出」与「截图工具链换算误差」：注入调试脚本量 `innerWidth`、对比 PNG 真实宽度，一次定位；反复改 CSS 是在解一个不存在的问题。布局验证的稳妥路径是**大视口居中截图**（HTML 本身是交付物、手机端由响应式 CSS 保证），不必强求小视口截图完美。
