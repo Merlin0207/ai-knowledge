@@ -2,7 +2,7 @@
 > 主题：本地部署、第三方 API 接入与第三方能力包验收的排障记录
 > 来源：与 WorkBuddy 的对话整理
 > 整理日期：2026-11-11（初版 2026-11-01；11-02 新增第七节；11-03 新增第八至十一节；11-04 新增第十二节；11-05 新增第十三节；11-08 新增第十四节：seed 字段键名错误导致的静默落库失败；11-09 新增第十五节：盘口符号口径反转导致的批量错判；11-11 新增第十六节：无音轨短视频的字幕 OCR 通道；第十七节：预存在文件写入被拒的三层根因；第十八节：上游首 token 超时处置）
-> 适用版本：Windows 11 + Node.js 环境；ziwei-doushu（Next.js 16.3.8）+ DeepSeek API；DeepSeek Harness v0.2.1-rc.5；Codex CLI；百度网盘连接器；三款第三方足球预测 Skill；OpenCV 5.0.0（opencv-python-headless）；WorkBuddy 本地 Office 编辑器（editor_sdk）
+> 适用版本：Windows 11 + Node.js 环境；ziwei-doushu（Next.js 16.3.8）+ DeepSeek API；DeepSeek Harness v0.2.1-rc.5；Codex CLI；百度网盘连接器；三款第三方足球预测 Skill；OpenCV 5.0.0（opencv-python-headless）；WorkBuddy 本地 Office 编辑器（editor\_sdk）
 
 ## 一、开源项目本地起服务的标准步骤
 
@@ -138,7 +138,7 @@ npm run dev
 | --- | --- | --- |
 | **数据覆盖** | 库内实体数远小于使用场景 | 48 支国家队 → 俱乐部赛全部 fallback 到默认值，四场输出同一个数 |
 | **静默 fallback** | 查不到数据时返回默认值而非报错 | 缺数据时输出 Elo 1500、xG 1.35/1.35，看起来像结论 |
-| **概率归一性** | 三项概率和 ≠ 1 | 平局项额外加 \\\`(1- |
+| **概率归一性** | 三项概率和 ≠ 1 | 平局项额外加 \\\\\\\`(1- |
 | **信号的符号** | 用绝对值判定「有价值」 | `abs(edge) >= 3` → 模型低于市场 5.1pp 也被标为机会，而那是反向信号 |
 | **阈值是否扣成本** | 固定阈值忽略费率 | 一刀切 3pp，而 87% 返还率下真实保本门槛是 4.9 / 3.9 / 6.1pp |
 | **依赖与运行环境** | 依赖未安装，import 即失败 | 依赖 numpy / requests，目标机器均未安装 |
@@ -195,7 +195,7 @@ npm run dev
 | --- | --- | --- |
 | 耗时 | 25.8 秒 | 103 秒 |
 | tokens | 3.4k | 53.7k |
-| 现金成本 | 约 \\\$0.002 | 0（占订阅额度） |
+| 现金成本 | 约 \\\\\\\$0.002 | 0（占订阅额度） |
 
 Codex 走 Responses API 的另一条路（与 CLI 不同计费）：gpt-5.3-codex 约 $1.75/$14 每百万 tokens（输入/输出），codex-mini $1.50/$6；粗算高频自动化场景约 ¥2/场、月 ¥250。**低频场景 CLI 免费够用，不迁移**。
 
@@ -291,7 +291,7 @@ Edge（系统 125% DPI 缩放）+ headless Chrome 截图：页面右侧被稳定
 
 ### 现象
 
-回填 6 场赛果时，`import` 返回成功、比赛与概率全部入库，但\*\*比分预测（score\\\_\*\***forecasts）一条未进**。全程无报错、无警告。
+回填 6 场赛果时，`import` 返回成功、比赛与概率全部入库，但\\\*\\\*比分预测（score\\\\\\\_\\\*\\\***forecasts）一条未进**。全程无报错、无警告。
 
 ### 定位
 
@@ -311,7 +311,7 @@ Edge（系统 125% DPI 缩放）+ headless Chrome 截图：页面右侧被稳定
 | 11-05 模板渲染静默失败 | 占位符与格式化语法冲突 | 输出为空但退出码 0 |
 | 11-08 比分未入库 | 字段键名错误 | 字段被丢弃，其余正常 |
 
-> **判据：**`pred.py import`\*\* 是「全量覆盖式 + 容忍缺字段」的写入，任何键名错误或字段缺失都不报错。\*\*
+> **判据：**`pred.py import`\\\*\\\* 是「全量覆盖式 + 容忍缺字段」的写入，任何键名错误或字段缺失都不报错。\\\*\\\*
 
 因此对应三条操作纪律：
 
@@ -367,24 +367,29 @@ Edge（系统 125% DPI 缩放）+ headless Chrome 截图：页面右侧被稳定
 ## 十六、无音轨短视频转文案：字幕 OCR 通道（2026-11-11 新增）
 
 ### 现象与判据
+
 抖音下载的 mp4（115 MB，4 分 48 秒）走 `AudioTranscribe` 报 `Invalid audio file`。**不要重试转录**，先验证是否存在音轨：直接读前 1 MB 解析 mp4 原子结构，搜 `ftyp / moov / trak / mp4a / avc1 / aac`。本例只有 `ftyp, moov, trak, avc1`，无 `mp4a / aac / opus` → 确证无音轨。
 
 环境里没有 `ffprobe` / `ffmpeg`（`command not found`），不要在探测链上耗时间；纯 Python 读 atom 就足够定性。
 
 ### 通道：抽帧 → 字幕带裁剪 → 长图拼接 → 逐图 OCR
+
 ```python
 cap = cv2.VideoCapture(path)
 cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)        # 按毫秒定位，每 11-12 秒一帧，首尾加密
 band = fr[int(h*0.84):int(h*0.99), int(w*0.05):int(w*0.95)]   # 字幕带：底部 84%-99%，左右内缩 5%
 canvas = Image.new('RGB', (900, len(grp)*100))  # 每 1.5 秒一条字幕，30 条纵向拼一张长图
 ```
+
 本例产出：31 帧（拼 8 张四联图，用于快速看版式与判断有无音轨）+ 192 条字幕条（拼 7 张长图，逐图按顺序读即得全文）。
 
 ### 关键踩坑：cv2 不认 git-bash 的 `/tmp`
+
 `cv2.imwrite('/tmp/vframes/f.jpg', frame)` **静默失败**——不抛异常、返回 False，`ls /tmp/vframes` 为空，连带 PIL 的 glob 也拿到空列表，表现为「抽了 28 帧但一张都没有」。
 规则：Windows 上给 cv2 / PIL 的路径一律用原生绝对路径（`C:\Users\...\AppData\Local\Temp\...`），不要用 MSYS 风格路径；批量写图后必须 `ls` 点数验证，不要以「无异常」代替「有产出」。
 
 ### 产能与边界
+
 - 4 分 48 秒视频 ≈ 7 张长图 OCR，约 3 分钟取全文；
 - 无音轨 + 硬字幕的短视频，**字幕 OCR 比 ASR 稳定**；有音轨时仍优先 ASR（成本低一个量级）；
 - OCR 结果是近似原文，专有名词、比分、数字必须回看原帧核对。
@@ -392,6 +397,7 @@ canvas = Image.new('RGB', (900, len(grp)*100))  # 每 1.5 秒一条字幕，30 �
 ## 十七、预存在文件写入被拒的三层根因：编码 → ACL → 句柄锁（2026-11-11 新增）
 
 ### 现象
+
 写回一个已存在的 CSV（736 字节，UTF-8-SIG + CRLF）全部失败：
 
 - `open(path, 'w')` → `PermissionError [Errno 13]`；
@@ -399,8 +405,9 @@ canvas = Image.new('RGB', (900, len(grp)*100))  # 每 1.5 秒一条字幕，30 �
 - `os.replace` / `File.Replace` / `Copy-Item -Force` → `WinError 5 拒绝访问` 或「正由另一进程使用」。
 
 ### 定位顺序（按此顺序最省时间）
+
 | 步 | 检查 | 结果 | 结论 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | 文件是否只读 | `IsReadOnly=False`，`mode 0666` | 排除只读属性 |
 | 2 | BOM / 换行 / 编码 | UTF-8-SIG + CRLF 正常 | 排除编码 |
 | 3 | **同目录新建文件能否写** | 新建 + 删除 OK | 排除目录级只读 → 问题在文件本身 |
@@ -410,14 +417,17 @@ canvas = Image.new('RGB', (900, len(grp)*100))  # 每 1.5 秒一条字幕，30 �
 | 7 | Restart Manager 定位持有者 | `RmGetList` 返回 `editor_sdk.exe` | 文件正在本地 Office 编辑器里打开 |
 
 ### 定位句柄持有者的可用手段（Windows）
+
 - `handle.exe` / `handle64.exe`：默认未安装，不要指望；
 - `openfiles /query`：需开启系统全局「维护对象列表」标志，非管理员被拒（`错误: 拒绝访问`）；
-- **Restart Manager API（`rstrtmgr.dll`）**：无需额外工具，`RmStartSession → RmRegisterResources → RmGetList` 直接拿到 PID 与进程名，是本次唯一有效路径，ctypes 版本可内联跑。
+- **Restart Manager API（**`rstrtmgr.dll`**）**：无需额外工具，`RmStartSession → RmRegisterResources → RmGetList` 直接拿到 PID 与进程名，是本次唯一有效路径，ctypes 版本可内联跑。
 
 ### 正确处置
-不要绕过锁——`Copy-Item` / `Move-Item` / 原子替换只会换一种错误码。`editor_sdk.exe` 持有意味着文件**正在 WorkBuddy 的本地 Office 编辑器里打开**，正确路径是走 `workbuddy-office-routing` → 本地 office 编辑（editor_sdk 直接改已打开的文档并保存），而不是从外部进程覆盖磁盘文件。
+
+不要绕过锁——`Copy-Item` / `Move-Item` / 原子替换只会换一种错误码。`editor_sdk.exe` 持有意味着文件**正在 WorkBuddy 的本地 Office 编辑器里打开**，正确路径是走 `workbuddy-office-routing` → 本地 office 编辑（editor\_sdk 直接改已打开的文档并保存），而不是从外部进程覆盖磁盘文件。
 
 ### 可复用判据
+
 1. 只有「某个预存在文件」写不了、同目录新建文件正常 → 文件级 ACL 或句柄，不是目录权限；
 2. `EBUSY` / 「正由另一进程使用」→ 句柄锁，改权限无用；
 3. 判定「沙箱 ACL 还是句柄」的分水岭：**换真实用户身份后仍失败 = 句柄**；
@@ -432,3 +442,15 @@ canvas = Image.new('RGB', (900, len(grp)*100))  # 每 1.5 秒一条字幕，30 �
 **处置**：原样重发一次；不要改写 prompt、不要降级模型、不要拆问题。重发仍失败才按通道故障排查（第十节「先探针，再排查脚本」）。
 
 **代价意识**：单次超时的墙钟成本是 150 秒，串行任务里足以吞掉一个自动化窗口；长链路任务的关键路径上应保留可重入的中断点，避免一次超时导致整轮白跑。
+
+## 十九、automation_update 短 ID 失效与 heredoc 撇号转义（2026-11-13 新增）
+
+### automation_update 删除任务必须用完整 UUID
+
+用前 8 位短 ID（如 `d680cd7f`）调用删除，工具返回成功但任务仍在列表里——删除实际未生效。修复：改用完整 UUID 删除两个过期任务，删除后回查列表确认。
+
+**规则**：automation_update 的 id 字段一律传完整 UUID；任何删除/修改操作之后必须回查列表验证生效。
+
+### heredoc 内嵌 Python 的撇号转义
+
+单引号字符串内含撇号（如 `20\'`，球员译名场景常见）触发 SyntaxError。修复：含撇号的文本一律用双引号字符串包裹；生成 heredoc 脚本前先扫一遍待写内容里有没有 `'`。
